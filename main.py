@@ -10,7 +10,7 @@ enc = AutoModel.from_pretrained("Qwen/Qwen3-Embedding-0.6B", torch_dtype=dt).to(
 llm = AutoModelForCausalLM.from_pretrained("Qwen/Qwen3-1.7B", torch_dtype=dt).to(dev)
 proj = nn.Linear(enc.config.hidden_size, llm.config.hidden_size).to(dev, dt)
 
-block, nWinBlocks = 512, 4
+block, nWinBlocks, nSum = 512, 4, 4
 
 
 def encBlock(ids, grad=False):
@@ -18,6 +18,13 @@ def encBlock(ids, grad=False):
     ctx = torch.enable_grad() if grad else torch.no_grad()
     with ctx:
         return enc(input_ids=t).last_hidden_state
+
+
+def takeSums(h):
+    if h.shape[1] <= nSum:
+        return h
+    pos = torch.linspace(0, h.shape[1] - 1, nSum, device=h.device).round().long()
+    return h[:, pos]
 
 
 def makeOpt():
@@ -35,7 +42,7 @@ def trainStep(docIds, opt):
     past = [docIds[i * block:(i + 1) * block] for i in range(k)]
     win = docIds[k * block:(k + 1) * block]
     with torch.no_grad():
-        sums = torch.cat([encBlock(b)[:, -1:] for b in past], 1)
+        sums = torch.cat([takeSums(encBlock(b)) for b in past], 1)
     x = torch.cat([proj(sums), proj(encBlock(win, grad=True))], 1)
     logits = llm(inputs_embeds=x, logits_to_keep=block).logits
     labels = torch.tensor([docIds[k * block + 1:(k + 1) * block + 1]], device=dev)
@@ -59,7 +66,8 @@ class Session:
 
     @torch.no_grad()
     def rebuild(self):
-        x = torch.cat(self.sumVecs + self.winVecs, 1)
+        parts = [proj(x) for x in self.sumVecs + self.winVecs]
+        x = torch.cat(parts, 1)
         self.cache = DynamicCache()
         self.out = llm(inputs_embeds=x, past_key_values=self.cache,
                        use_cache=True, logits_to_keep=1)
@@ -71,9 +79,9 @@ class Session:
         pushed = False
         while len(self.tail) >= block:
             b, self.tail = self.tail[:block], self.tail[block:]
-            self.winVecs.append(proj(encBlock(b)))
+            self.winVecs.append(encBlock(b))
             if len(self.winVecs) > nWinBlocks:
-                self.sumVecs.append(self.winVecs.pop(0)[:, -1:])
+                self.sumVecs.append(takeSums(self.winVecs.pop(0)))
             pushed = True
         if pushed:
             self.tailIn = 0
