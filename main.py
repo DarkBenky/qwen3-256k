@@ -8,7 +8,7 @@ dev, dt = "cuda", torch.float16
 encName = "Qwen/Qwen3-Embedding-0.6B"
 llmName = "Qwen/Qwen3-1.5B"
 
-block, nWinBlocks, nSum = 512, 4, 4
+block, nWinBlocks, nSum = 512, 4, 16
 lrProj, lrCore = 1e-4, 1e-5
 
 tok = AutoTokenizer.from_pretrained(encName)
