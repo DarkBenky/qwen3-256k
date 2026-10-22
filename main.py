@@ -14,7 +14,32 @@ lrProj, lrCore = 1e-4, 1e-5
 tok = AutoTokenizer.from_pretrained(encName)
 enc = AutoModel.from_pretrained(encName, torch_dtype=dt).to(dev)
 llm = AutoModelForCausalLM.from_pretrained(llmName, torch_dtype=dt).to(dev)
-proj = nn.Linear(enc.config.hidden_size, llm.config.hidden_size).to(dev, dt)
+
+
+class Proj(nn.Module):
+    def __init__(self, dIn, dOut, llmEmbed):
+        super().__init__()
+        self.inLn = nn.LayerNorm(dIn)
+        self.fc1 = nn.Linear(dIn, dOut)
+        self.act = nn.GELU()
+        self.fc2 = nn.Linear(dOut, dOut)
+        nn.init.normal_(self.fc2.weight, std=0.02)
+        nn.init.zeros_(self.fc2.bias)
+        self.outLn = nn.LayerNorm(dOut, elementwise_affine=False)
+        with torch.no_grad():
+            scale = llmEmbed.weight.float().norm(dim=-1).mean()
+        self.scale = nn.Parameter(scale.to(dt))
+
+    def forward(self, x):
+        x = self.inLn(x)
+        x = self.fc1(x)
+        x = self.act(x)
+        x = self.fc2(x)
+        x = self.outLn(x)
+        return x * self.scale
+
+
+proj = Proj(enc.config.hidden_size, llm.config.hidden_size, llm.get_input_embeddings()).to(dev, dt)
 
 
 class SumPool(nn.Module):
