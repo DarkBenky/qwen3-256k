@@ -77,9 +77,9 @@ class Session:
             pushed = True
         if pushed:
             self.tailIn = 0
-            self.rebuild()  # RoPE is baked into cached keys, positions must be renumbered
+            self.rebuild()
         if self.tail:
-            h = encBlock(self.tail)  # prefix encoding keeps states exact
+            h = encBlock(self.tail)
             newStates = h[:, self.tailIn:]
             if newStates.shape[1] > 0:
                 self.out = llm(inputs_embeds=proj(newStates), past_key_values=self.cache,
@@ -107,3 +107,11 @@ if __name__ == "__main__":
     print(s.genText(200))
     s.feedText("\n\nSummarize the document above.")
     print(s.genText(300))
+
+    opt = makeOpt()
+    text = open("long_doc.txt", encoding="utf-8").read()
+    docIds = tok(text, add_special_tokens=False).input_ids
+    for i in range(20):
+        loss = trainStep(docIds, opt)
+        if loss is not None:
+            print(i, round(loss, 4))
