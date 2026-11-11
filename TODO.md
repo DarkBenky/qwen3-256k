@@ -1,0 +1,1 @@
+- [ ] before training model test what kind of accuracy can we get when pipeline looks embedding -> middle ( pick witch embeding vectors to use N ) -> classical LLM 
